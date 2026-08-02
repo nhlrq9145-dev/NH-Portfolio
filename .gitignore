@@ -1,0 +1,38 @@
+# Local project memory
+PROJECT_MEMORY.md
+SESSION_LOG.md
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Java and Maven build output
+**/target/
+*.class
+
+# Node and Vite build output
+**/node_modules/
+**/dist/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+**/.idea/
+**/.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+
+# Operating system
+.DS_Store
+Thumbs.db
+Desktop.ini
