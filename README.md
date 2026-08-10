@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 尚未开始，状态为 `not_started`。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 已开始，状态为 `in_progress`，当前只完成管理员客户 DTO 边界。
 
 ## 已完成功能
 
@@ -26,6 +26,8 @@
 - 修改客户时允许保留自己的原邮箱和电话
 - MySQL 唯一约束提供最终并发重复保护
 - 数据库唯一约束冲突统一映射为 HTTP 409，不向前端暴露 SQL、异常详情或堆栈
+- 管理员客户接口使用独立请求和响应 DTO，Controller 公开方法不再接收或返回 JPA Entity
+- 客户请求只绑定姓名、电话、邮箱和状态；ID 与创建时间由后端控制
 
 数据库唯一约束使用以下准确名称：
 
@@ -226,10 +228,10 @@ Set-Location "C:\Users\NH\Desktop\NH-Portfolio\backend\backend"
 .\mvnw.cmd clean test
 ```
 
-2026-08-02 的最终权威结果：
+2026-08-09 的当前结果：
 
 ```text
-Tests run: 36
+Tests run: 49
 Failures: 0
 Errors: 0
 Skipped: 0
@@ -238,7 +240,7 @@ BUILD SUCCESS
 
 测试 JDBC URL：`jdbc:h2:mem:auth_integration_test`
 
-覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束以及数据库冲突 HTTP 409 映射。
+覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束以及数据库冲突 HTTP 409 映射。
 
 ## 当前项目状态
 
@@ -247,7 +249,7 @@ BUILD SUCCESS
 | Phase 1：客户管理 MVP | `complete` | CRUD、搜索、筛选、分页、校验和重复检查已完成 |
 | Phase 2：管理员登录与接口保护 | `complete` | Spring Security、HttpSession、登录/退出和接口保护已完成 |
 | Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；后端完整测试 36 项通过，GitHub Actions 后端测试和前端构建通过 |
-| Phase 4 | `not_started` | 尚未开始 |
+| Phase 4 | `in_progress` | 已开始 Phase 4.1；管理员客户 DTO 边界已经完成，尚未进入公开演示功能 |
 
 当前边界：
 

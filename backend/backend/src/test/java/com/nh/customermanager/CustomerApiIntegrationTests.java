@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -44,6 +46,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 class CustomerApiIntegrationTests {
+
+    private static final Set<String> CUSTOMER_RESPONSE_FIELDS = Set.of(
+            "id",
+            "name",
+            "phone",
+            "email",
+            "status",
+            "createdAt"
+    );
+
+    private static final Set<String> CUSTOMER_PAGE_RESPONSE_FIELDS = Set.of(
+            "content",
+            "page",
+            "size",
+            "totalElements",
+            "totalPages",
+            "first",
+            "last"
+    );
 
     private static final String LOGIN_JSON = """
             {
@@ -177,6 +198,197 @@ class CustomerApiIntegrationTests {
     }
 
     @Test
+    void createRequestCannotControlServerManagedFields()
+            throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/customers")
+                                .session(session)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "id": 999999,
+                                          "name": "DTO Request",
+                                          "phone": "090-0000-0001",
+                                          "email": "dto-request@example.com",
+                                          "status": "POTENTIAL",
+                                          "createdAt": "2000-01-01T00:00:00"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Map<String, Object> response = readObject(result);
+        assertEquals(CUSTOMER_RESPONSE_FIELDS, response.keySet());
+        assertFalse(
+                ((Number) response.get("id")).longValue() == 999999L
+        );
+        assertFalse(
+                "2000-01-01T00:00:00".equals(
+                        response.get("createdAt")
+                )
+        );
+    }
+
+    @Test
+    void customerEndpointsKeepExactAdminJsonContracts()
+            throws Exception {
+        long customerId = createCustomer(
+                "DTO Contract",
+                "090-0000-0002",
+                "dto-contract@example.com",
+                "POTENTIAL"
+        );
+
+        MvcResult findResult = mockMvc.perform(
+                        get("/api/customers/{id}", customerId)
+                                .session(session)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        assertEquals(
+                CUSTOMER_RESPONSE_FIELDS,
+                readObject(findResult).keySet()
+        );
+
+        MvcResult updateResult = mockMvc.perform(
+                        put("/api/customers/{id}", customerId)
+                                .session(session)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(customerJson(
+                                        "DTO Contract Updated",
+                                        "090-0000-0003",
+                                        "dto-contract-updated@example.com",
+                                        "ACTIVE"
+                                ))
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        assertEquals(
+                CUSTOMER_RESPONSE_FIELDS,
+                readObject(updateResult).keySet()
+        );
+
+        MvcResult pageResult = mockMvc.perform(
+                        get("/api/customers").session(session)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<String, Object> page = readObject(pageResult);
+        assertEquals(CUSTOMER_PAGE_RESPONSE_FIELDS, page.keySet());
+
+        List<Map<String, Object>> content = JsonPath.read(
+                pageResult.getResponse().getContentAsString(),
+                "$.content"
+        );
+        assertEquals(1, content.size());
+        assertEquals(
+                CUSTOMER_RESPONSE_FIELDS,
+                content.get(0).keySet()
+        );
+    }
+
+    @Test
+    void omittedStatusDefaultsToPotentialOnCreate()
+            throws Exception {
+        MvcResult result = mockMvc.perform(
+                        post("/api/customers")
+                                .session(session)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(customerJsonWithoutStatus(
+                                        "Default Create Status",
+                                        "090-0000-0004",
+                                        "default-create-status@example.com"
+                                ))
+                )
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("POTENTIAL"))
+                .andReturn();
+
+        Customer customer = customerRepository.findById(readId(result))
+                .orElseThrow();
+        assertEquals("POTENTIAL", customer.getStatus());
+    }
+
+    @Test
+    void omittedStatusDefaultsToPotentialOnUpdate()
+            throws Exception {
+        long customerId = createCustomer(
+                "Default Update Source",
+                "090-0000-0005",
+                "default-update-source@example.com",
+                "ACTIVE"
+        );
+
+        mockMvc.perform(
+                        put("/api/customers/{id}", customerId)
+                                .session(session)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(customerJsonWithoutStatus(
+                                        "Default Update Status",
+                                        "090-0000-0006",
+                                        "default-update-status@example.com"
+                                ))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(customerId))
+                .andExpect(jsonPath("$.status").value("POTENTIAL"));
+
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow();
+        assertEquals("POTENTIAL", customer.getStatus());
+    }
+
+    @Test
+    void nullStatusOnCreateReturnsValidationErrorWithoutCreatingCustomer()
+            throws Exception {
+        long customerCount = customerRepository.count();
+
+        expectValidationError(
+                customerJsonWithNullStatus(
+                        "Null Create Status",
+                        "090-0000-0007",
+                        "null-create-status@example.com"
+                ),
+                "status"
+        );
+
+        assertEquals(customerCount, customerRepository.count());
+    }
+
+    @Test
+    void nullStatusOnUpdateLeavesCustomerUnchanged()
+            throws Exception {
+        long customerId = createCustomer(
+                "Null Update Source",
+                "090-0000-0008",
+                "null-update-source@example.com",
+                "ACTIVE"
+        );
+        Customer before = customerRepository.findById(customerId)
+                .orElseThrow();
+
+        expectUpdateValidationError(
+                customerId,
+                customerJsonWithNullStatus(
+                        "Null Update Attempt",
+                        "090-0000-0009",
+                        "null-update-attempt@example.com"
+                ),
+                "status"
+        );
+
+        Customer after = customerRepository.findById(customerId)
+                .orElseThrow();
+        assertEquals(before.getId(), after.getId());
+        assertEquals(before.getName(), after.getName());
+        assertEquals(before.getPhone(), after.getPhone());
+        assertEquals(before.getEmail(), after.getEmail());
+        assertEquals("ACTIVE", after.getStatus());
+        assertEquals(before.getCreatedAt(), after.getCreatedAt());
+    }
+
+    @Test
     void blankNameReturnsValidationError() throws Exception {
         expectValidationError(
                 customerJson(
@@ -248,6 +460,82 @@ class CustomerApiIntegrationTests {
                         "Invalid Status",
                         "090-1000-0005",
                         "invalid-status@example.com",
+                        "INACTIVE"
+                ),
+                "status"
+        );
+    }
+
+    @Test
+    void blankStatusReturnsValidationError() throws Exception {
+        expectValidationError(
+                customerJson(
+                        "Blank Status",
+                        "090-1000-0006",
+                        "blank-status@example.com",
+                        ""
+                ),
+                "status"
+        );
+        expectValidationError(
+                customerJson(
+                        "Whitespace Status",
+                        "090-1000-0011",
+                        "whitespace-status@example.com",
+                        "   "
+                ),
+                "status"
+        );
+    }
+
+    @Test
+    void blankStatusOnUpdateReturnsValidationError()
+            throws Exception {
+        long customerId = createCustomer(
+                "Blank Update Status Source",
+                "090-1000-0007",
+                "blank-update-status-source@example.com",
+                "ACTIVE"
+        );
+
+        expectUpdateValidationError(
+                customerId,
+                customerJson(
+                        "Blank Update Status",
+                        "090-1000-0008",
+                        "blank-update-status@example.com",
+                        ""
+                ),
+                "status"
+        );
+        expectUpdateValidationError(
+                customerId,
+                customerJson(
+                        "Whitespace Update Status",
+                        "090-1000-0012",
+                        "whitespace-update-status@example.com",
+                        "   "
+                ),
+                "status"
+        );
+    }
+
+    @Test
+    void invalidStatusOnUpdateReturnsValidationError()
+            throws Exception {
+        long customerId = createCustomer(
+                "Invalid Update Status Source",
+                "090-1000-0009",
+                "invalid-update-status-source@example.com",
+                "ACTIVE"
+        );
+
+        expectUpdateValidationError(
+                customerId,
+                customerJson(
+                        "Invalid Update Status",
+                        "090-1000-0010",
+                        "invalid-update-status@example.com",
                         "INACTIVE"
                 ),
                 "status"
@@ -890,6 +1178,29 @@ class CustomerApiIntegrationTests {
                 .andExpect(jsonPath("$.errors." + field).exists());
     }
 
+    private void expectUpdateValidationError(
+            long customerId,
+            String requestJson,
+            String field
+    ) throws Exception {
+        mockMvc.perform(
+                        put("/api/customers/{id}", customerId)
+                                .session(session)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(requestJson)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(
+                        MediaType.APPLICATION_JSON
+                ))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value(
+                        "提交的数据不符合要求"
+                ))
+                .andExpect(jsonPath("$.errors").isMap())
+                .andExpect(jsonPath("$.errors." + field).exists());
+    }
+
     private void expectConflict(String requestJson) throws Exception {
         mockMvc.perform(
                         post("/api/customers")
@@ -920,6 +1231,14 @@ class CustomerApiIntegrationTests {
                 "$.id"
         );
         return id.longValue();
+    }
+
+    private Map<String, Object> readObject(MvcResult result)
+            throws Exception {
+        return JsonPath.read(
+                result.getResponse().getContentAsString(),
+                "$"
+        );
     }
 
     private List<Long> readIds(MvcResult result) throws Exception {
@@ -965,5 +1284,34 @@ class CustomerApiIntegrationTests {
                   "status": "%s"
                 }
                 """.formatted(name, phone, email, customerStatus);
+    }
+
+    private String customerJsonWithoutStatus(
+            String name,
+            String phone,
+            String email
+    ) {
+        return """
+                {
+                  "name": "%s",
+                  "phone": "%s",
+                  "email": "%s"
+                }
+                """.formatted(name, phone, email);
+    }
+
+    private String customerJsonWithNullStatus(
+            String name,
+            String phone,
+            String email
+    ) {
+        return """
+                {
+                  "name": "%s",
+                  "phone": "%s",
+                  "email": "%s",
+                  "status": null
+                }
+                """.formatted(name, phone, email);
     }
 }

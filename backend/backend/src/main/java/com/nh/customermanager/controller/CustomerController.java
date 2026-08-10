@@ -1,5 +1,8 @@
 package com.nh.customermanager.controller;
 
+import com.nh.customermanager.dto.CustomerPageResponse;
+import com.nh.customermanager.dto.CustomerRequest;
+import com.nh.customermanager.dto.CustomerResponse;
 import com.nh.customermanager.entity.Customer;
 import com.nh.customermanager.service.CustomerService;
 import jakarta.validation.Valid;
@@ -16,8 +19,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/customers")
@@ -45,7 +46,10 @@ public class CustomerController {
         );
 
         return new CustomerPageResponse(
-                result.getContent(),
+                result.getContent()
+                        .stream()
+                        .map(this::toResponse)
+                        .toList(),
                 result.getNumber(),
                 result.getSize(),
                 result.getTotalElements(),
@@ -56,24 +60,24 @@ public class CustomerController {
     }
 
     @GetMapping("/{id}")
-    public Customer findById(@PathVariable Long id) {
-        return customerService.findById(id);
+    public CustomerResponse findById(@PathVariable Long id) {
+        return toResponse(customerService.findById(id));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Customer create(
-            @Valid @RequestBody Customer customer
+    public CustomerResponse create(
+            @Valid @RequestBody CustomerRequest request
     ) {
-        return customerService.create(customer);
+        return toResponse(customerService.create(toEntity(request)));
     }
 
     @PutMapping("/{id}")
-    public Customer update(
+    public CustomerResponse update(
             @PathVariable Long id,
-            @Valid @RequestBody Customer customer
+            @Valid @RequestBody CustomerRequest request
     ) {
-        return customerService.update(id, customer);
+        return toResponse(customerService.update(id, toEntity(request)));
     }
 
     @DeleteMapping("/{id}")
@@ -82,14 +86,23 @@ public class CustomerController {
         customerService.delete(id);
     }
 
-    public record CustomerPageResponse(
-            List<Customer> content,
-            int page,
-            int size,
-            long totalElements,
-            int totalPages,
-            boolean first,
-            boolean last
-    ) {
+    private Customer toEntity(CustomerRequest request) {
+        Customer customer = new Customer();
+        customer.setName(request.name());
+        customer.setPhone(request.phone());
+        customer.setEmail(request.email());
+        customer.setStatus(request.status());
+        return customer;
+    }
+
+    private CustomerResponse toResponse(Customer customer) {
+        return new CustomerResponse(
+                customer.getId(),
+                customer.getName(),
+                customer.getPhone(),
+                customer.getEmail(),
+                customer.getStatus(),
+                customer.getCreatedAt()
+        );
     }
 }
