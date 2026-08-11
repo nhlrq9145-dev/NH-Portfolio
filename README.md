@@ -127,6 +127,16 @@ NH-Portfolio
 
 Controller 级 `@CrossOrigin` 已移除，所有接口统一使用上述全局单一 Origin 契约。Demo 集成测试固定使用测试专用的 `http://localhost:5173`，不受开发者机器上的 `APP_CORS_ALLOWED_ORIGIN` 环境变量影响。
 
+前端构建可使用以下公开环境变量：
+
+| 变量名 | 是否必需 | 用途 |
+|---|---|---|
+| `VITE_API_BASE_URL` | 否 | 完整 API 根地址；未设置、空字符串或纯空白时默认使用相对路径 `/api` |
+
+`VITE_API_BASE_URL` 表示包含固定 `/api` 路径的完整 API 根地址。允许值为 `/api`、`/api/`，或路径严格为 `/api` 或 `/api/` 的绝对 HTTP/HTTPS URL；末尾斜杠会被移除。其他路径、查询参数、fragment、user-info、协议相对 URL 和非 HTTP/HTTPS 协议会在应用初始化时抛出配置错误，不会静默回退。`APP_CORS_ALLOWED_ORIGIN` 控制后端允许的前端 Origin，`VITE_API_BASE_URL` 控制前端请求的后端 API 根地址，两者语义不同。
+
+所有 `VITE_` 环境变量都会进入公开的前端构建产物。不得将密码、Token、密钥或其他秘密放入 `VITE_API_BASE_URL` 或任何其他 `VITE_` 环境变量。
+
 以下仅为安全占位示例，不是真实凭据：
 
 ```powershell
@@ -184,7 +194,16 @@ npm run dev
 
 前端默认地址：`http://localhost:5173`
 
-本地前端和后端使用不同端口。后端当前允许 `http://localhost:5173` 携带 Cookie 进行跨域请求。
+未配置 `VITE_API_BASE_URL` 时，前端请求相对路径 `/api`；Vite 开发服务器将 `/api` 原样代理到 `http://localhost:8080`，因此现有六处请求在本地开发时无需改写。若显式配置绝对 API 根地址，后端的 `APP_CORS_ALLOWED_ORIGIN` 必须与前端 Origin 匹配。
+
+## 前端生产构建
+
+默认生产构建保留相对 API 根地址 `/api`。如果前端和后端不使用同一 Origin，应在执行构建的终端中将 `VITE_API_BASE_URL` 设置为公开的绝对 API 根地址，例如 `https://api.example.com/api`；修改后需要重新构建。
+
+```powershell
+Set-Location "C:\Users\NH\Desktop\NH-Portfolio\frontend"
+npm run build
+```
 
 ## API 概览
 
@@ -239,7 +258,14 @@ npm run dev
 
 ## 自动化测试
 
-测试只使用隔离的内存 H2，不连接真实 MySQL，也不需要读取真实数据库密码。
+前端配置契约测试：
+
+```powershell
+Set-Location "C:\Users\NH\Desktop\NH-Portfolio\frontend"
+npm test
+```
+
+后端测试只使用隔离的内存 H2，不连接真实 MySQL，也不需要读取真实数据库密码。
 
 在后端实际根目录执行：
 
