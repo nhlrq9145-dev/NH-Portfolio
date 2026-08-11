@@ -2,6 +2,7 @@ package com.nh.customermanager.config;
 
 import com.nh.customermanager.entity.AdminUser;
 import com.nh.customermanager.repository.AdminUserRepository;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -11,6 +12,7 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -20,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
+import org.springframework.security.web.savedrequest.RequestCacheAwareFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -98,6 +102,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(
                 List.of(
                         "GET",
+                        "HEAD",
                         "POST",
                         "PUT",
                         "DELETE",
@@ -118,6 +123,36 @@ public class SecurityConfig {
         );
 
         return source;
+    }
+
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        HttpStatusRequestRejectedHandler badRequestHandler =
+                new HttpStatusRequestRejectedHandler();
+        HttpStatusRequestRejectedHandler demoWriteHandler =
+                new HttpStatusRequestRejectedHandler(
+                        HttpServletResponse.SC_FORBIDDEN
+                );
+
+        return web -> web.requestRejectedHandler(
+                (request, response, exception) -> {
+                    if (DemoWriteRequestFilter
+                            .matchesDemoWriteRequest(request)) {
+                        demoWriteHandler.handle(
+                                request,
+                                response,
+                                exception
+                        );
+                        return;
+                    }
+
+                    badRequestHandler.handle(
+                            request,
+                            response,
+                            exception
+                    );
+                }
+        );
     }
 
     @Bean
@@ -152,6 +187,17 @@ public class SecurityConfig {
                                         "/**"
                                 ).permitAll()
                                 .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/demo/customers"
+                                ).permitAll()
+                                .requestMatchers(
+                                        HttpMethod.HEAD,
+                                        "/api/demo/customers"
+                                ).permitAll()
+                                .requestMatchers(
+                                        "/api/demo/**"
+                                ).denyAll()
+                                .requestMatchers(
                                         "/api/ping",
                                         "/api/auth/login",
                                         "/error"
@@ -162,6 +208,10 @@ public class SecurityConfig {
                                         "/api/customers/**"
                                 ).authenticated()
                                 .anyRequest().permitAll()
+                )
+                .addFilterBefore(
+                        new DemoWriteRequestFilter(),
+                        RequestCacheAwareFilter.class
                 )
                 .exceptionHandling(exceptions ->
                         exceptions.authenticationEntryPoint(

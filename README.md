@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 已开始，状态为 `in_progress`，当前只完成管理员客户 DTO 边界。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”和 Phase 4.2“安全公开 Demo 客户接口”均已完成。
 
 ## 已完成功能
 
@@ -33,6 +33,18 @@
 
 - `uk_customers_email UNIQUE(email)`
 - `uk_customers_phone UNIQUE(phone)`
+
+### 公开 Demo 客户接口
+
+- 公开支持 `GET /api/demo/customers` 和 `HEAD /api/demo/customers`
+- Demo 响应只包含 `displayName`、`industry`、`status`
+- 数据全部是在代码中固定声明、并以“演示客户”明确标记的虚构数据
+- Demo Controller 不访问 `CustomerRepository`、`CustomerService`、`Customer` Entity 或数据库
+- Demo 命名空间的 `POST`、`PUT`、`PATCH`、`DELETE` 均返回 HTTP 403；规范路径、编码路径和矩阵参数路径均受到保护
+- 匿名 Demo 写请求不创建 Session，也不返回 `Set-Cookie` 或 `JSESSIONID`
+- Demo HEAD 返回 HTTP 200、正文为空，并且不创建 Session 或 Cookie
+- CORS 允许来源仍严格为 `http://localhost:5173`，允许方法已支持 HEAD，未扩大来源范围
+- 匿名 `HEAD /api/customers` 仍返回 HTTP 401
 
 ## 技术栈
 
@@ -176,6 +188,8 @@ npm run dev
 |---|---|---|
 | `GET` | `/api/ping` | 后端连通性检查 |
 | `POST` | `/api/auth/login` | 管理员登录并创建 Session |
+| `GET` | `/api/demo/customers` | 返回固定的虚构 Demo 客户数据 |
+| `HEAD` | `/api/demo/customers` | 检查公开 Demo 资源，响应正文为空 |
 
 ### 需要登录的接口
 
@@ -228,19 +242,19 @@ Set-Location "C:\Users\NH\Desktop\NH-Portfolio\backend\backend"
 .\mvnw.cmd clean test
 ```
 
-2026-08-09 的当前结果：
+2026-08-11 的当前结果：
 
 ```text
-Tests run: 49
+Tests run: 80
 Failures: 0
 Errors: 0
 Skipped: 0
 BUILD SUCCESS
 ```
 
-测试 JDBC URL：`jdbc:h2:mem:auth_integration_test`
+测试 JDBC URL：`jdbc:h2:mem:auth_integration_test` 和 `jdbc:h2:mem:demo_customer_api_test`
 
-覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束以及数据库冲突 HTTP 409 映射。
+覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束、数据库冲突 HTTP 409 映射，以及 Demo GET/HEAD、CORS、路径保护和无状态写请求。
 
 ## 当前项目状态
 
@@ -248,8 +262,10 @@ BUILD SUCCESS
 |---|---|---|
 | Phase 1：客户管理 MVP | `complete` | CRUD、搜索、筛选、分页、校验和重复检查已完成 |
 | Phase 2：管理员登录与接口保护 | `complete` | Spring Security、HttpSession、登录/退出和接口保护已完成 |
-| Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；后端完整测试 36 项通过，GitHub Actions 后端测试和前端构建通过 |
-| Phase 4 | `in_progress` | 已开始 Phase 4.1；管理员客户 DTO 边界已经完成，尚未进入公开演示功能 |
+| Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；GitHub Actions 后端测试和前端构建通过 |
+| Phase 4 | `in_progress` | Phase 4.1 和 Phase 4.2 已完成；Phase 4 整体不得标记为 complete |
+| Phase 4.1：管理员客户 DTO 边界 | `complete` | 管理端请求/响应 DTO 边界及服务器字段保护已经完成 |
+| Phase 4.2：安全公开 Demo 客户接口 | `complete` | Demo GET/HEAD、写请求 403、路径保护、CORS 与无状态行为已经完成并通过复审 |
 
 当前边界：
 
