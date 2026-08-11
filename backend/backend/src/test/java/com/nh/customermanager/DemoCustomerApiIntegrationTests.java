@@ -61,7 +61,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "spring.jpa.show-sql=false",
                 "ADMIN_USERNAME=auth-test-only-admin",
-                "ADMIN_PASSWORD=auth-test-only-admin-password-2026"
+                "ADMIN_PASSWORD=auth-test-only-admin-password-2026",
+                "app.cors.allowed-origin=http://localhost:5173"
         }
 )
 @AutoConfigureMockMvc

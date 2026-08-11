@@ -3,6 +3,7 @@ package com.nh.customermanager.config;
 import com.nh.customermanager.entity.AdminUser;
 import com.nh.customermanager.repository.AdminUserRepository;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,11 +29,17 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 
 @Configuration
 public class SecurityConfig {
+
+    private static final String INVALID_CORS_ORIGIN_MESSAGE =
+            "Invalid app.cors.allowed-origin: expected one exact HTTP(S) origin";
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -91,12 +98,16 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origin}")
+            String allowedOrigin
+    ) {
+        String validatedOrigin = validateAllowedOrigin(allowedOrigin);
         CorsConfiguration configuration =
                 new CorsConfiguration();
 
         configuration.setAllowedOrigins(
-                List.of("http://localhost:5173")
+                List.of(validatedOrigin)
         );
 
         configuration.setAllowedMethods(
@@ -123,6 +134,67 @@ public class SecurityConfig {
         );
 
         return source;
+    }
+
+    private static String validateAllowedOrigin(String configuredOrigin) {
+        if (configuredOrigin == null) {
+            throw invalidCorsOrigin();
+        }
+
+        String origin = configuredOrigin.trim();
+        if (origin.isEmpty()
+                || origin.contains(",")
+                || origin.contains("*")) {
+            throw invalidCorsOrigin();
+        }
+
+        try {
+            URI uri = new URI(origin).parseServerAuthority();
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            String authority = uri.getRawAuthority();
+            int port = uri.getPort();
+
+            if ((!"http".equalsIgnoreCase(scheme)
+                    && !"https".equalsIgnoreCase(scheme))
+                    || host == null
+                    || host.isBlank()
+                    || authority == null
+                    || authority.endsWith(":")
+                    || uri.getRawUserInfo() != null
+                    || (uri.getRawPath() != null
+                        && !uri.getRawPath().isEmpty())
+                    || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null
+                    || (port != -1 && (port < 1 || port > 65535))) {
+                throw invalidCorsOrigin();
+            }
+
+            String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            int normalizedPort =
+                    ("http".equals(normalizedScheme) && port == 80)
+                            || ("https".equals(normalizedScheme)
+                            && port == 443)
+                            ? -1
+                            : port;
+
+            return new URI(
+                    normalizedScheme,
+                    null,
+                    normalizedHost,
+                    normalizedPort,
+                    null,
+                    null,
+                    null
+            ).toASCIIString();
+        } catch (URISyntaxException exception) {
+            throw invalidCorsOrigin();
+        }
+    }
+
+    private static IllegalStateException invalidCorsOrigin() {
+        return new IllegalStateException(INVALID_CORS_ORIGIN_MESSAGE);
     }
 
     @Bean

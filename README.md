@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”和 Phase 4.2“安全公开 Demo 客户接口”均已完成。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”和 Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”均已完成。
 
 ## 已完成功能
 
@@ -43,7 +43,7 @@
 - Demo 命名空间的 `POST`、`PUT`、`PATCH`、`DELETE` 均返回 HTTP 403；规范路径、编码路径和矩阵参数路径均受到保护
 - 匿名 Demo 写请求不创建 Session，也不返回 `Set-Cookie` 或 `JSESSIONID`
 - Demo HEAD 返回 HTTP 200、正文为空，并且不创建 Session 或 Cookie
-- CORS 允许来源仍严格为 `http://localhost:5173`，允许方法已支持 HEAD，未扩大来源范围
+- CORS 允许来源由 `APP_CORS_ALLOWED_ORIGIN` 配置；未设置时默认使用 `http://localhost:5173`，只注册一个规范化后的精确 Origin，允许方法已支持 HEAD
 - 匿名 `HEAD /api/customers` 仍返回 HTTP 401
 
 ## 技术栈
@@ -121,6 +121,11 @@ NH-Portfolio
 | `DB_PASSWORD` | 是 | MySQL 应用用户密码 |
 | `ADMIN_USERNAME` | 建议显式设置 | 预置管理员用户名，长度为 3～50 个字符 |
 | `ADMIN_PASSWORD` | 是 | 预置管理员密码，至少 10 个字符 |
+| `APP_CORS_ALLOWED_ORIGIN` | 否 | 后端允许的唯一前端 Origin，默认值为 `http://localhost:5173` |
+
+`APP_CORS_ALLOWED_ORIGIN` 必须填写单个、完整、精确的 HTTP 或 HTTPS Origin，只能包含协议、主机和可选合法端口。多个来源、通配符或通配子域、路径、查询参数、fragment、user-info、非法端口和非法协议都会被拒绝；不能使用 `"*"`。校验成功后，scheme 和 host 会规范为小写，HTTP 的默认端口 80 与 HTTPS 的默认端口 443 会被移除，合法非默认端口会保留。不要将真实部署域名、密码或其他秘密写入仓库。
+
+Controller 级 `@CrossOrigin` 已移除，所有接口统一使用上述全局单一 Origin 契约。Demo 集成测试固定使用测试专用的 `http://localhost:5173`，不受开发者机器上的 `APP_CORS_ALLOWED_ORIGIN` 环境变量影响。
 
 以下仅为安全占位示例，不是真实凭据：
 
@@ -128,6 +133,7 @@ NH-Portfolio
 $env:DB_PASSWORD = "YOUR_DATABASE_PASSWORD"
 $env:ADMIN_USERNAME = "YOUR_ADMIN_USERNAME"
 $env:ADMIN_PASSWORD = "YOUR_ADMIN_PASSWORD"
+$env:APP_CORS_ALLOWED_ORIGIN = "http://localhost:5173"
 ```
 
 PowerShell 中通过 `$env:` 设置的变量对当前终端及其启动的后端进程生效。请在设置变量的同一个终端窗口中启动后端。
@@ -245,16 +251,20 @@ Set-Location "C:\Users\NH\Desktop\NH-Portfolio\backend\backend"
 2026-08-11 的当前结果：
 
 ```text
-Tests run: 80
+Tests run: 111
 Failures: 0
 Errors: 0
 Skipped: 0
 BUILD SUCCESS
 ```
 
-测试 JDBC URL：`jdbc:h2:mem:auth_integration_test` 和 `jdbc:h2:mem:demo_customer_api_test`
+完整后端测试只使用隔离内存 H2；Surefire 证据中 `jdbc:mysql` 命中数为 0，未连接真实 MySQL。
 
-覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束、数据库冲突 HTTP 409 映射，以及 Demo GET/HEAD、CORS、路径保护和无状态写请求。
+测试 JDBC URL 包括 `jdbc:h2:mem:auth_integration_test`、`jdbc:h2:mem:demo_customer_api_test` 和 `jdbc:h2:mem:cors_configuration_test`。
+
+覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束、数据库冲突 HTTP 409 映射，以及 Demo GET/HEAD、CORS 单一精确 Origin 的校验与规范化、路径保护和无状态写请求。
+
+Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败的 P1/P2 问题`。
 
 ## 当前项目状态
 
@@ -263,14 +273,16 @@ BUILD SUCCESS
 | Phase 1：客户管理 MVP | `complete` | CRUD、搜索、筛选、分页、校验和重复检查已完成 |
 | Phase 2：管理员登录与接口保护 | `complete` | Spring Security、HttpSession、登录/退出和接口保护已完成 |
 | Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；GitHub Actions 后端测试和前端构建通过 |
-| Phase 4 | `in_progress` | Phase 4.1 和 Phase 4.2 已完成；Phase 4 整体不得标记为 complete |
+| Phase 4 | `in_progress` | Phase 4.1、Phase 4.2 和 Phase 4.3.1 已完成；Phase 4 整体不得标记为 complete |
 | Phase 4.1：管理员客户 DTO 边界 | `complete` | 管理端请求/响应 DTO 边界及服务器字段保护已经完成 |
 | Phase 4.2：安全公开 Demo 客户接口 | `complete` | Demo GET/HEAD、写请求 403、路径保护、CORS 与无状态行为已经完成并通过复审 |
+| Phase 4.3 | `in_progress` | Phase 4.3.1 已完成；尚未开始 Phase 4.3.2 |
+| Phase 4.3.1：后端 CORS 允许来源外部化，并收敛为单一精确来源 | `complete` | 配置外部化、非法 Origin 拒绝、规范化与测试环境隔离均已完成并通过复审 |
 
 当前边界：
 
 - 项目尚未部署上线。
 - 项目尚未声明为生产可用。
 - 当前本地开发配置暂时关闭 CSRF；正式部署前必须重新设计并启用 CSRF 防护，并配置 HTTPS 和安全 Cookie。
-- 当前 CORS 仅面向本地前端 `http://localhost:5173`。
+- 当前 CORS 默认面向本地前端 `http://localhost:5173`；如需覆盖，只能通过 `APP_CORS_ALLOWED_ORIGIN` 配置一个精确的 HTTP/HTTPS Origin。
 - README 不包含真实密码、密码哈希、密钥或数据库凭据。
