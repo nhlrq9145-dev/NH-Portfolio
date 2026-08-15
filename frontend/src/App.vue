@@ -1,10 +1,16 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { normalizeApiBaseUrl } from "./apiBaseUrl.js";
+import {
+  clearCsrfToken,
+  csrfFetch,
+  fetchCsrfToken,
+} from "./csrf.js";
 
 const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const API_URL = `${API_BASE_URL}/customers`;
 const AUTH_URL = `${API_BASE_URL}/auth`;
+const CSRF_FAILURE_MESSAGE = "请求安全校验失败，请刷新页面后重试";
 
 const checkingSession = ref(true);
 const authenticated = ref(false);
@@ -72,12 +78,29 @@ function clearCustomerState() {
   closeForm();
 }
 
-function expireSession(message = "登录状态已失效，请重新登录") {
+async function expireSession(message = "登录状态已失效，请重新登录") {
   authenticated.value = false;
   currentUsername.value = "";
   loginForm.value.password = "";
   loginError.value = message;
+  clearCsrfToken();
   clearCustomerState();
+
+  try {
+    await fetchCsrfToken(AUTH_URL);
+  } catch {
+    loginError.value = message
+      ? `${message}；安全校验初始化失败，请刷新页面`
+      : "安全校验初始化失败，请刷新页面";
+  }
+}
+
+function responseFailureMessage(response, responseData) {
+  if (response.status === 403) {
+    return CSRF_FAILURE_MESSAGE;
+  }
+
+  return responseData?.message || `HTTP ${response.status}`;
 }
 
 async function checkSession() {
@@ -85,6 +108,8 @@ async function checkSession() {
   loginError.value = "";
 
   try {
+    await fetchCsrfToken(AUTH_URL);
+
     const response = await fetch(`${AUTH_URL}/me`, {
       method: "GET",
       credentials: "include",
@@ -128,7 +153,7 @@ async function login() {
   loggingIn.value = true;
 
   try {
-    const response = await fetch(`${AUTH_URL}/login`, {
+    const response = await csrfFetch(`${AUTH_URL}/login`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -143,9 +168,11 @@ async function login() {
     const responseData = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(responseData?.message || `HTTP ${response.status}`);
+      throw new Error(responseFailureMessage(response, responseData));
     }
 
+    clearCsrfToken();
+    await fetchCsrfToken(AUTH_URL);
     authenticated.value = true;
     currentUsername.value = responseData.username;
     loginForm.value.password = "";
@@ -163,7 +190,7 @@ async function logout() {
   errorMessage.value = "";
 
   try {
-    const response = await fetch(`${AUTH_URL}/logout`, {
+    const response = await csrfFetch(`${AUTH_URL}/logout`, {
       method: "POST",
       credentials: "include",
     });
@@ -171,10 +198,10 @@ async function logout() {
     const responseData = await response.json().catch(() => null);
 
     if (!response.ok && response.status !== 401) {
-      throw new Error(responseData?.message || `HTTP ${response.status}`);
+      throw new Error(responseFailureMessage(response, responseData));
     }
 
-    expireSession("");
+    await expireSession("");
   } catch (error) {
     errorMessage.value = `退出失败：${error.message}`;
   } finally {
@@ -201,7 +228,7 @@ async function loadCustomers(page = currentPage.value) {
     const responseData = await response.json().catch(() => null);
 
     if (response.status === 401) {
-      expireSession();
+      await expireSession();
       return;
     }
 
@@ -276,7 +303,7 @@ async function saveCustomer() {
   const requestMethod = isEditing ? "PUT" : "POST";
 
   try {
-    const response = await fetch(requestUrl, {
+    const response = await csrfFetch(requestUrl, {
       method: requestMethod,
       credentials: "include",
       headers: {
@@ -293,7 +320,7 @@ async function saveCustomer() {
     const responseData = await response.json().catch(() => null);
 
     if (response.status === 401) {
-      expireSession();
+      await expireSession();
       return;
     }
 
@@ -301,7 +328,11 @@ async function saveCustomer() {
       const firstFieldError = Object.values(responseData?.errors ?? {})[0];
 
       throw new Error(
-        firstFieldError || responseData?.message || `HTTP ${response.status}`,
+        response.status === 403
+          ? CSRF_FAILURE_MESSAGE
+          : firstFieldError ||
+              responseData?.message ||
+              `HTTP ${response.status}`,
       );
     }
 
@@ -361,18 +392,20 @@ async function deleteCustomer(customer) {
   successMessage.value = "";
 
   try {
-    const response = await fetch(`${API_URL}/${customer.id}`, {
+    const response = await csrfFetch(`${API_URL}/${customer.id}`, {
       method: "DELETE",
       credentials: "include",
     });
 
+    const responseData = await response.json().catch(() => null);
+
     if (response.status === 401) {
-      expireSession();
+      await expireSession();
       return;
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      throw new Error(responseFailureMessage(response, responseData));
     }
 
     if (editingId.value === customer.id) {

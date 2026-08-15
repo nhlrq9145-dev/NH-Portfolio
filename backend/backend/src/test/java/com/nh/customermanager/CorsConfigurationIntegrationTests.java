@@ -82,6 +82,56 @@ class CorsConfigurationIntegrationTests {
     }
 
     @Test
+    void configuredOriginAllowsCredentialedCsrfHeaderPreflight()
+            throws Exception {
+        mockMvc.perform(options("/api/customers")
+                        .header(HttpHeaders.ORIGIN, CONFIGURED_ORIGIN)
+                        .header(
+                                HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD,
+                                HttpMethod.POST.name()
+                        )
+                        .header(
+                                HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS,
+                                "Content-Type, X-CSRF-TOKEN"
+                        ))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
+                        CONFIGURED_ORIGIN
+                ))
+                .andExpect(header().string(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS,
+                        "true"
+                ))
+                .andExpect(header().string(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,
+                        containsString("X-CSRF-TOKEN")
+                ));
+    }
+
+    @Test
+    void unconfiguredOriginRejectsCsrfHeaderPreflight()
+            throws Exception {
+        mockMvc.perform(options("/api/customers")
+                        .header(
+                                HttpHeaders.ORIGIN,
+                                "https://untrusted.example"
+                        )
+                        .header(
+                                HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD,
+                                HttpMethod.POST.name()
+                        )
+                        .header(
+                                HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS,
+                                "X-CSRF-TOKEN"
+                        ))
+                .andExpect(status().isForbidden())
+                .andExpect(header().doesNotExist(
+                        HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN
+                ));
+    }
+
+    @Test
     void configuredOriginAllowsDemoCustomersHeadPreflight() throws Exception {
         assertAllowedPreflight("/api/demo/customers", HttpMethod.HEAD)
                 .andExpect(header().string(

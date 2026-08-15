@@ -21,10 +21,14 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfException;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
-import org.springframework.security.web.savedrequest.RequestCacheAwareFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -95,6 +99,11 @@ public class SecurityConfig {
     @Bean
     public SecurityContextRepository securityContextRepository() {
         return new HttpSessionSecurityContextRepository();
+    }
+
+    @Bean
+    public CsrfTokenRepository csrfTokenRepository() {
+        return new HttpSessionCsrfTokenRepository();
     }
 
     @Bean
@@ -231,15 +240,21 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CorsConfigurationSource corsConfigurationSource,
-            SecurityContextRepository securityContextRepository
+            SecurityContextRepository securityContextRepository,
+            CsrfTokenRepository csrfTokenRepository
     ) throws Exception {
+        AccessDeniedHandlerImpl defaultAccessDeniedHandler =
+                new AccessDeniedHandlerImpl();
+
         http
                 .cors(cors ->
                         cors.configurationSource(
                                 corsConfigurationSource
                         )
                 )
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf.csrfTokenRepository(
+                        csrfTokenRepository
+                ))
                 .securityContext(context ->
                         context
                                 .securityContextRepository(
@@ -267,6 +282,10 @@ public class SecurityConfig {
                                         "/api/demo/customers"
                                 ).permitAll()
                                 .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/auth/csrf"
+                                ).permitAll()
+                                .requestMatchers(
                                         "/api/demo/**"
                                 ).denyAll()
                                 .requestMatchers(
@@ -283,10 +302,11 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(
                         new DemoWriteRequestFilter(),
-                        RequestCacheAwareFilter.class
+                        CsrfFilter.class
                 )
                 .exceptionHandling(exceptions ->
-                        exceptions.authenticationEntryPoint(
+                        exceptions
+                                .authenticationEntryPoint(
                                 (request, response, exception) -> {
                                     response.setStatus(401);
                                     response.setContentType(
@@ -302,6 +322,34 @@ public class SecurityConfig {
                                     );
                                 }
                         )
+                                .accessDeniedHandler(
+                                        (request, response, exception) -> {
+                                            if (!(exception
+                                                    instanceof CsrfException)) {
+                                                defaultAccessDeniedHandler
+                                                        .handle(
+                                                                request,
+                                                                response,
+                                                                exception
+                                                        );
+                                                return;
+                                            }
+
+                                            response.setStatus(403);
+                                            response.setContentType(
+                                                    MediaType
+                                                            .APPLICATION_JSON_VALUE
+                                            );
+                                            response.setCharacterEncoding(
+                                                    StandardCharsets.UTF_8.name()
+                                            );
+                                            response.getWriter().write(
+                                                    """
+                                                    {"status":403,"message":"请求安全校验失败，请刷新页面后重试"}
+                                                    """
+                                            );
+                                        }
+                                )
                 )
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())

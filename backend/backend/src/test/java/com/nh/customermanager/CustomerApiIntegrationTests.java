@@ -14,6 +14,8 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -23,6 +25,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -84,6 +87,10 @@ class CustomerApiIntegrationTests {
 
     private MockHttpSession session;
 
+    private String csrfHeaderName;
+
+    private String csrfToken;
+
     @BeforeEach
     void cleanCustomersAndLogin() throws Exception {
         try (Connection connection = dataSource.getConnection()) {
@@ -105,6 +112,7 @@ class CustomerApiIntegrationTests {
         MvcResult createResult = mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Alice Chen",
@@ -149,6 +157,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Alice Updated",
@@ -183,6 +192,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         delete("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                 )
                 .andExpect(status().isNoContent());
 
@@ -198,11 +208,121 @@ class CustomerApiIntegrationTests {
     }
 
     @Test
+    void createRejectsMissingForgedAndCrossSessionCsrfTokens()
+            throws Exception {
+        String requestJson = customerJson(
+                "Rejected Create",
+                "090-9000-0001",
+                "rejected-create@example.com",
+                "POTENTIAL"
+        );
+        long customerCount = customerRepository.count();
+        CsrfSession otherSession = getCsrfSession();
+
+        expectCsrfForbidden(
+                post("/api/customers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+        expectCsrfForbidden(
+                post("/api/customers")
+                        .header(csrfHeaderName, "forged-test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+        expectCsrfForbidden(
+                post("/api/customers")
+                        .header(
+                                otherSession.headerName(),
+                                otherSession.token()
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+
+        assertEquals(customerCount, customerRepository.count());
+    }
+
+    @Test
+    void updateRejectsMissingForgedAndCrossSessionCsrfTokens()
+            throws Exception {
+        long customerId = createCustomer(
+                "Protected Update",
+                "090-9000-0002",
+                "protected-update@example.com",
+                "POTENTIAL"
+        );
+        String requestJson = customerJson(
+                "Rejected Update",
+                "090-9000-0003",
+                "rejected-update@example.com",
+                "ACTIVE"
+        );
+        CsrfSession otherSession = getCsrfSession();
+
+        expectCsrfForbidden(
+                put("/api/customers/{id}", customerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+        expectCsrfForbidden(
+                put("/api/customers/{id}", customerId)
+                        .header(csrfHeaderName, "forged-test-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+        expectCsrfForbidden(
+                put("/api/customers/{id}", customerId)
+                        .header(
+                                otherSession.headerName(),
+                                otherSession.token()
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson)
+        );
+
+        Customer unchanged = customerRepository.findById(customerId)
+                .orElseThrow();
+        assertEquals("Protected Update", unchanged.getName());
+        assertEquals("POTENTIAL", unchanged.getStatus());
+    }
+
+    @Test
+    void deleteRejectsMissingForgedAndCrossSessionCsrfTokens()
+            throws Exception {
+        long customerId = createCustomer(
+                "Protected Delete",
+                "090-9000-0004",
+                "protected-delete@example.com",
+                "POTENTIAL"
+        );
+        CsrfSession otherSession = getCsrfSession();
+
+        expectCsrfForbidden(
+                delete("/api/customers/{id}", customerId)
+        );
+        expectCsrfForbidden(
+                delete("/api/customers/{id}", customerId)
+                        .header(csrfHeaderName, "forged-test-token")
+        );
+        expectCsrfForbidden(
+                delete("/api/customers/{id}", customerId)
+                        .header(
+                                otherSession.headerName(),
+                                otherSession.token()
+                        )
+        );
+
+        assertTrue(customerRepository.existsById(customerId));
+    }
+
+    @Test
     void createRequestCannotControlServerManagedFields()
             throws Exception {
         MvcResult result = mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
@@ -254,6 +374,7 @@ class CustomerApiIntegrationTests {
         MvcResult updateResult = mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "DTO Contract Updated",
@@ -294,6 +415,7 @@ class CustomerApiIntegrationTests {
         MvcResult result = mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJsonWithoutStatus(
                                         "Default Create Status",
@@ -323,6 +445,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJsonWithoutStatus(
                                         "Default Update Status",
@@ -567,6 +690,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", missingId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Updated Missing",
@@ -591,7 +715,8 @@ class CustomerApiIntegrationTests {
         );
 
         expectMissingCustomer(
-                delete("/api/customers/{id}", missingId),
+                delete("/api/customers/{id}", missingId)
+                        .header(csrfHeaderName, csrfToken),
                 missingId
         );
     }
@@ -720,6 +845,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Own Contact Updated",
@@ -761,6 +887,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Email Update Source",
@@ -795,6 +922,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         "Phone Update Source",
@@ -1085,8 +1213,14 @@ class CustomerApiIntegrationTests {
     }
 
     private MockHttpSession loginAndGetSession() throws Exception {
+        CsrfSession preLoginCsrf = getCsrfSession();
         MvcResult result = mockMvc.perform(
                         post("/api/auth/login")
+                                .session(preLoginCsrf.session())
+                                .header(
+                                        preLoginCsrf.headerName(),
+                                        preLoginCsrf.token()
+                                )
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(LOGIN_JSON)
                 )
@@ -1109,7 +1243,67 @@ class CustomerApiIntegrationTests {
                 HttpSessionSecurityContextRepository
                         .SPRING_SECURITY_CONTEXT_KEY
         ));
+
+        CsrfSession postLoginCsrf = getCsrfSession(
+                authenticatedSession
+        );
+        assertNotEquals(
+                preLoginCsrf.token(),
+                postLoginCsrf.token()
+        );
+        csrfHeaderName = postLoginCsrf.headerName();
+        csrfToken = postLoginCsrf.token();
         return authenticatedSession;
+    }
+
+    private CsrfSession getCsrfSession() throws Exception {
+        return getCsrfSession(null);
+    }
+
+    private CsrfSession getCsrfSession(
+            MockHttpSession existingSession
+    ) throws Exception {
+        MockHttpServletRequestBuilder request = get("/api/auth/csrf");
+        if (existingSession != null) {
+            request.session(existingSession);
+        }
+
+        MvcResult result = mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.headerName").isNotEmpty())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andReturn();
+
+        assertTrue(
+                result.getRequest().getSession(false)
+                        instanceof MockHttpSession
+        );
+
+        return new CsrfSession(
+                (MockHttpSession) result.getRequest().getSession(false),
+                JsonPath.read(
+                        result.getResponse().getContentAsString(),
+                        "$.headerName"
+                ),
+                JsonPath.read(
+                        result.getResponse().getContentAsString(),
+                        "$.token"
+                )
+        );
+    }
+
+    private ResultActions expectCsrfForbidden(
+            MockHttpServletRequestBuilder request
+    ) throws Exception {
+        return mockMvc.perform(request.session(session))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(
+                        MediaType.APPLICATION_JSON
+                ))
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value(
+                        "请求安全校验失败，请刷新页面后重试"
+                ));
     }
 
     private long createCustomer(
@@ -1121,6 +1315,7 @@ class CustomerApiIntegrationTests {
         MvcResult result = mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(customerJson(
                                         name,
@@ -1150,6 +1345,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         delete("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                 )
                 .andExpect(status().isNoContent());
 
@@ -1163,6 +1359,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(requestJson)
                 )
@@ -1186,6 +1383,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         put("/api/customers/{id}", customerId)
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(requestJson)
                 )
@@ -1205,6 +1403,7 @@ class CustomerApiIntegrationTests {
         mockMvc.perform(
                         post("/api/customers")
                                 .session(session)
+                                .header(csrfHeaderName, csrfToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(requestJson)
                 )
@@ -1313,5 +1512,12 @@ class CustomerApiIntegrationTests {
                   "status": null
                 }
                 """.formatted(name, phone, email);
+    }
+
+    private record CsrfSession(
+            MockHttpSession session,
+            String headerName,
+            String token
+    ) {
     }
 }

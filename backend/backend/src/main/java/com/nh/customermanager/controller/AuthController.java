@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,8 +21,14 @@ public class AuthController {
 
     private final AuthService authService;
 
-    public AuthController(AuthService authService) {
+    private final CsrfTokenRepository csrfTokenRepository;
+
+    public AuthController(
+            AuthService authService,
+            CsrfTokenRepository csrfTokenRepository
+    ) {
         this.authService = authService;
+        this.csrfTokenRepository = csrfTokenRepository;
     }
 
     @PostMapping("/login")
@@ -36,8 +44,22 @@ public class AuthController {
                 response
         );
 
+        csrfTokenRepository.saveToken(null, request, response);
+
         response.setHeader("Cache-Control", "no-store");
         return new AuthResponse(true, username);
+    }
+
+    @GetMapping("/csrf")
+    public CsrfResponse csrf(
+            CsrfToken csrfToken,
+            HttpServletResponse response
+    ) {
+        response.setHeader("Cache-Control", "no-store");
+        return new CsrfResponse(
+                csrfToken.getHeaderName(),
+                csrfToken.getToken()
+        );
     }
 
     @GetMapping("/me")
@@ -82,6 +104,12 @@ public class AuthController {
     public record AuthResponse(
             boolean authenticated,
             String username
+    ) {
+    }
+
+    public record CsrfResponse(
+            String headerName,
+            String token
     ) {
     }
 

@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”、Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”和 Phase 4.3.2“前端 API 基址外部化与本地开发代理兼容”均已完成。Phase 4.3 继续为 `in_progress`，Phase 4.3.3 为 `not_started`。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”、Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”、Phase 4.3.2“前端 API 基址外部化与本地开发代理兼容”和 Phase 4.3.3“Session 管理端的端到端 CSRF 防护”均已完成。Phase 4.3 继续为 `in_progress`，仍需处理生产部署缺口。
 
 ## 已完成功能
 
@@ -13,6 +13,9 @@
 - 管理员密码使用 BCrypt 哈希保存
 - 未登录访问客户接口时返回统一 JSON 格式的 HTTP 401
 - 前端请求携带 Session Cookie，刷新页面后可以恢复登录状态
+- 管理端登录、退出及客户写操作使用基于 `HttpSessionCsrfTokenRepository` 的 CSRF 防护
+- 前端通过 `GET /api/auth/csrf` 获取服务器指定的 Header 名称和 Token，Token 只保存在模块内存中
+- 登录成功和退出后丢弃旧 Token 并重新获取；CSRF 失败返回固定 HTTP 403，前端不会自动重放写请求
 
 ### 客户管理
 
@@ -54,7 +57,7 @@
 | 后端框架 | Spring Boot 4.0.7 |
 | Web | Spring Web MVC，由 Spring Boot 4.0.7 管理版本 |
 | 持久层 | Spring Data JPA、Hibernate |
-| 安全 | Spring Security、BCrypt、HttpSession |
+| 安全 | Spring Security、BCrypt、HttpSession、CSRF Token |
 | 数据库 | MySQL 8；当前已验证环境为 MySQL 8.4.10 |
 | 数据库驱动 | MySQL Connector/J，运行时依赖，版本由 Spring Boot 管理 |
 | 测试数据库 | H2，test scope；最终验证使用 H2 2.4.240 |
@@ -212,6 +215,7 @@ npm run build
 | 方法 | 路径 | 功能 |
 |---|---|---|
 | `GET` | `/api/ping` | 后端连通性检查 |
+| `GET` | `/api/auth/csrf` | 为管理端浏览器创建或复用 Session，并返回 `headerName`、`token`；响应禁止缓存 |
 | `POST` | `/api/auth/login` | 管理员登录并创建 Session |
 | `GET` | `/api/demo/customers` | 返回固定的虚构 Demo 客户数据 |
 | `HEAD` | `/api/demo/customers` | 检查公开 Demo 资源，响应正文为空 |
@@ -228,7 +232,11 @@ npm run build
 | `PUT` | `/api/customers/{id}` | 修改客户 |
 | `DELETE` | `/api/customers/{id}` | 删除客户，成功返回 HTTP 204 |
 
-未登录访问 `/api/auth/me`、`/api/auth/logout` 或 `/api/customers/**` 时返回 HTTP 401。
+未登录访问 `/api/auth/me`、`/api/auth/logout` 或 `/api/customers/**` 时返回 HTTP 401。调用登录、退出和客户 `POST`、`PUT`、`PATCH`、`DELETE` 前，前端必须先通过同一 Session 调用 `GET /api/auth/csrf`，并使用响应中的 `headerName` 附加 Token。GET 和 HEAD 不附加 CSRF Header；缺失、无效或来自其他 Session 的 Token 返回固定 HTTP 403。
+
+CSRF Token 只保存在前端模块内存中，不进入 URL、DOM、Cookie、`localStorage`、`sessionStorage` 或日志。登录成功后旧 Token 立即失效，前端重新获取认证 Session 的 Token；退出后旧 Session 和 Token 失效，前端重新获取匿名 Session Token。HTTP 403 不会触发写请求自动重试，只提示用户刷新页面或重新操作。
+
+`GET /api/auth/csrf` 允许为管理端匿名浏览器创建 Session。没有调用该端点时，公开 Demo GET/HEAD、被拒绝的 Demo 写请求以及 Ping 继续保持无 Session、无 `Set-Cookie` 和无 `JSESSIONID`。
 
 ### 客户分页查询参数
 
@@ -258,7 +266,7 @@ npm run build
 
 ## 自动化测试
 
-前端配置契约测试：
+前端配置与 CSRF 契约测试：
 
 ```powershell
 Set-Location "C:\Users\NH\Desktop\NH-Portfolio\frontend"
@@ -274,10 +282,10 @@ Set-Location "C:\Users\NH\Desktop\NH-Portfolio\backend\backend"
 .\mvnw.cmd clean test
 ```
 
-2026-08-11 的当前结果：
+2026-08-15 的本地完整后端结果：
 
 ```text
-Tests run: 111
+Tests run: 123
 Failures: 0
 Errors: 0
 Skipped: 0
@@ -288,7 +296,13 @@ BUILD SUCCESS
 
 测试 JDBC URL 包括 `jdbc:h2:mem:auth_integration_test`、`jdbc:h2:mem:demo_customer_api_test` 和 `jdbc:h2:mem:cors_configuration_test`。
 
-覆盖范围包括认证 Session、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束、数据库冲突 HTTP 409 映射，以及 Demo GET/HEAD、CORS 单一精确 Origin 的校验与规范化、路径保护和无状态写请求。
+同日 `npm test` 结果为 11/11 通过，`npm run build` 成功并转换 15 个模块。GitHub Actions 前端任务按 `npm ci`、`npm test`、`npm run build` 的顺序执行；本轮没有运行远程 GitHub Actions。
+
+Phase 4.3.3 的后端目标测试结果为：`BackendApplicationTests` 13/13、`CustomerApiIntegrationTests` 38/38、`DemoCustomerApiIntegrationTests` 19/19、`CorsConfigurationIntegrationTests` 33/33，均通过。
+
+最终 `/review` 结论：`No actionable defects were found in the staged, unstaged, or untracked changes.` Review 同时确认前端测试与构建通过，以及全部 123 项后端测试通过。
+
+覆盖范围包括认证 Session、CSRF Token 取得与轮换、登录/退出和客户写操作的缺失/伪造/跨 Session Token 拒绝、拒绝后的数据不变、未登录 HTTP 401、客户 CRUD、DTO 请求与响应契约、校验、分页、搜索、筛选、Service 层联系方式重复检查、H2 唯一约束、数据库冲突 HTTP 409 映射，以及 Demo GET/HEAD、Ping、CORS 单一精确 Origin 与 `X-CSRF-TOKEN` 预检、路径保护和无状态写请求。
 
 Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败的 P1/P2 问题`。
 
@@ -299,18 +313,19 @@ Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败�
 | Phase 1：客户管理 MVP | `complete` | CRUD、搜索、筛选、分页、校验和重复检查已完成 |
 | Phase 2：管理员登录与接口保护 | `complete` | Spring Security、HttpSession、登录/退出和接口保护已完成 |
 | Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；GitHub Actions 后端测试和前端构建通过 |
-| Phase 4 | `in_progress` | Phase 4.1、Phase 4.2、Phase 4.3.1 和 Phase 4.3.2 已完成；Phase 4 整体不得标记为 complete |
+| Phase 4 | `in_progress` | Phase 4.1、Phase 4.2、Phase 4.3.1、Phase 4.3.2 和 Phase 4.3.3 已完成；Phase 4 整体不得标记为 complete |
 | Phase 4.1：管理员客户 DTO 边界 | `complete` | 管理端请求/响应 DTO 边界及服务器字段保护已经完成 |
 | Phase 4.2：安全公开 Demo 客户接口 | `complete` | Demo GET/HEAD、写请求 403、路径保护、CORS 与无状态行为已经完成并通过复审 |
-| Phase 4.3 | `in_progress` | Phase 4.3.1、Phase 4.3.2 已完成；Phase 4.3.3 尚未开始 |
+| Phase 4.3 | `in_progress` | Phase 4.3.1、Phase 4.3.2 和 Phase 4.3.3 已完成；生产部署缺口仍待处理 |
 | Phase 4.3.1：后端 CORS 允许来源外部化，并收敛为单一精确来源 | `complete` | 配置外部化、非法 Origin 拒绝、规范化与测试环境隔离均已完成并通过复审 |
 | Phase 4.3.2：前端 API 基址外部化与本地开发代理兼容 | `complete` | API 基址外部化、本地 `/api` 开发代理兼容、配置测试与生产构建均已完成；浏览器联调未执行 |
-| Phase 4.3.3 | `not_started` | 尚未开始；范围、目标、最小任务和验收标准待只读定义 |
+| Phase 4.3.3：Session 管理端的端到端 CSRF 防护 | `complete` | 实现、本地测试与最终 Review 均已通过 |
 
 当前边界：
 
 - 项目尚未部署上线。
 - 项目尚未声明为生产可用。
-- 当前本地开发配置暂时关闭 CSRF；正式部署前必须重新设计并启用 CSRF 防护，并配置 HTTPS 和安全 Cookie。
+- 管理端 CSRF 防护已启用并通过本地验证与最终 Review，Phase 4.3.3 状态为 `complete`。
+- HTTPS、Secure/SameSite Cookie、反向代理边界、生产数据库与迁移、秘密托管、真实浏览器部署联调和公网部署仍未完成。
 - 当前 CORS 默认面向本地前端 `http://localhost:5173`；如需覆盖，只能通过 `APP_CORS_ALLOWED_ORIGIN` 配置一个精确的 HTTP/HTTPS Origin。
 - README 不包含真实密码、密码哈希、密钥或数据库凭据。

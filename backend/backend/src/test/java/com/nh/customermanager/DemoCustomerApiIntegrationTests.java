@@ -168,6 +168,24 @@ class DemoCustomerApiIntegrationTests {
     }
 
     @Test
+    void pingRemainsPublicAndStateless() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/ping"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertAll(
+                () -> assertNull(result.getRequest().getSession(false)),
+                () -> assertNull(result.getResponse().getHeader(
+                        HttpHeaders.SET_COOKIE
+                )),
+                () -> assertNull(result.getResponse().getCookie(
+                        "JSESSIONID"
+                )),
+                () -> verifyNoInteractions(customerRepository)
+        );
+    }
+
+    @Test
     void unauthenticatedHeadDemoRequestIsPublicAndStateless()
             throws Exception {
         HttpResponse<byte[]> httpResult = HttpClient.newHttpClient().send(
@@ -433,8 +451,14 @@ class DemoCustomerApiIntegrationTests {
     }
 
     private MockHttpSession loginAndGetSession() throws Exception {
+        CsrfSession csrf = getCsrfSession();
         MvcResult result = mockMvc.perform(
                         post("/api/auth/login")
+                                .session(csrf.session())
+                                .header(
+                                        csrf.headerName(),
+                                        csrf.token()
+                                )
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(LOGIN_JSON)
                 )
@@ -458,10 +482,42 @@ class DemoCustomerApiIntegrationTests {
         return session;
     }
 
+    private CsrfSession getCsrfSession() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.headerName").isNotEmpty())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andReturn();
+
+        assertTrue(
+                result.getRequest().getSession(false)
+                        instanceof MockHttpSession
+        );
+
+        return new CsrfSession(
+                (MockHttpSession) result.getRequest().getSession(false),
+                JsonPath.read(
+                        result.getResponse().getContentAsString(),
+                        "$.headerName"
+                ),
+                JsonPath.read(
+                        result.getResponse().getContentAsString(),
+                        "$.token"
+                )
+        );
+    }
+
     private void expectForbidden(
             MockHttpServletRequestBuilder request
     ) throws Exception {
         mockMvc.perform(request)
                 .andExpect(status().isForbidden());
+    }
+
+    private record CsrfSession(
+            MockHttpSession session,
+            String headerName,
+            String token
+    ) {
     }
 }
