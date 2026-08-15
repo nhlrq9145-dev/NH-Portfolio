@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”和 Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”均已完成。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”、Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”和 Phase 4.3.2“前端 API 基址外部化与本地开发代理兼容”均已完成。Phase 4.3 继续为 `in_progress`，Phase 4.3.3 为 `not_started`。
 
 ## 已完成功能
 
@@ -299,11 +299,13 @@ Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败�
 | Phase 1：客户管理 MVP | `complete` | CRUD、搜索、筛选、分页、校验和重复检查已完成 |
 | Phase 2：管理员登录与接口保护 | `complete` | Spring Security、HttpSession、登录/退出和接口保护已完成 |
 | Phase 3：自动化测试与项目稳定化 | `complete` | 自动化测试与项目稳定化已经完成；GitHub Actions 后端测试和前端构建通过 |
-| Phase 4 | `in_progress` | Phase 4.1、Phase 4.2 和 Phase 4.3.1 已完成；Phase 4 整体不得标记为 complete |
+| Phase 4 | `in_progress` | Phase 4.1、Phase 4.2、Phase 4.3.1 和 Phase 4.3.2 已完成；Phase 4 整体不得标记为 complete |
 | Phase 4.1：管理员客户 DTO 边界 | `complete` | 管理端请求/响应 DTO 边界及服务器字段保护已经完成 |
 | Phase 4.2：安全公开 Demo 客户接口 | `complete` | Demo GET/HEAD、写请求 403、路径保护、CORS 与无状态行为已经完成并通过复审 |
-| Phase 4.3 | `in_progress` | Phase 4.3.1 已完成；尚未开始 Phase 4.3.2 |
+| Phase 4.3 | `in_progress` | Phase 4.3.1、Phase 4.3.2 已完成；Phase 4.3.3 尚未开始 |
 | Phase 4.3.1：后端 CORS 允许来源外部化，并收敛为单一精确来源 | `complete` | 配置外部化、非法 Origin 拒绝、规范化与测试环境隔离均已完成并通过复审 |
+| Phase 4.3.2：前端 API 基址外部化与本地开发代理兼容 | `complete` | API 基址外部化、本地 `/api` 开发代理兼容、配置测试与生产构建均已完成；浏览器联调未执行 |
+| Phase 4.3.3 | `not_started` | 尚未开始；范围、目标、最小任务和验收标准待只读定义 |
 
 当前边界：
 
