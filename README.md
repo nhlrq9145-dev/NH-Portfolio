@@ -2,7 +2,7 @@
 
 一个用于作品集展示和本地学习的前后端分离客户管理系统。管理员登录后可以查询和维护客户资料，前端通过 Session Cookie 调用受保护的后端接口。
 
-> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”、Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”、Phase 4.3.2“前端 API 基址外部化与本地开发代理兼容”和 Phase 4.3.3“Session 管理端的端到端 CSRF 防护”均已完成。Phase 4.3 继续为 `in_progress`，仍需处理生产部署缺口。
+> 当前项目可用于本地演示，尚未部署上线，也不应视为已经生产可用。Phase 3“自动化测试与项目稳定化”已经完成，状态为 `complete`；Phase 4 状态为 `in_progress`，其中 Phase 4.1“管理员客户 DTO 边界”、Phase 4.2“安全公开 Demo 客户接口”、Phase 4.3.1“后端 CORS 允许来源外部化，并收敛为单一精确来源”、Phase 4.3.2“前端 API 基址外部化与本地开发代理兼容”和 Phase 4.3.3“Session 管理端的端到端 CSRF 防护”均已完成。Phase 4.3.4“生产数据库版本化迁移基线”状态为 `in_progress`；Phase 4.3 继续为 `in_progress`，仍需处理生产部署缺口。
 
 ## 已完成功能
 
@@ -115,12 +115,22 @@ NH-Portfolio
 
 历史数据备份表不是正常安装步骤。新建本地环境时不需要创建、复制或导入历史备份表。
 
+### 全新生产数据库迁移基线
+
+`prod` Profile 只面向全新的 MySQL 8 数据库，不用于静默接管或迁移现有数据库。启动时必须显式设置 `SPRING_PROFILES_ACTIVE=prod`；默认本地 Profile 不运行 Flyway。启用 `prod` 后，后端从 `DB_JDBC_URL`、`DB_USERNAME` 和 `DB_PASSWORD` 读取数据库连接信息，不提供 localhost 或真实凭据默认值。
+
+`prod` Profile 使用 Flyway 执行版本化 Schema 迁移，并将 Hibernate 设置为 `ddl-auto=validate`。V1 迁移只创建 `admin_users`、`customers` 及当前 Entity 声明的主键和命名唯一约束，不插入管理员、客户或 Demo 数据；`baseline-on-migrate` 保持关闭，非空且没有 Flyway 历史的数据库会被拒绝。
+
+当前迁移自动化测试只使用 H2 的 MySQL 兼容模式作为第一层隔离验证。它不代表已经通过真实 MySQL 8 验收；在 Phase 4.3.4 完成前，仍需使用全新、可丢弃的 MySQL 8 环境验证首次迁移和重复启动行为。
+
 ## 环境变量
 
 后端使用以下环境变量：
 
 | 变量名 | 是否必需 | 用途 |
 |---|---|---|
+| `DB_JDBC_URL` | `prod` 必需 | 全新生产 MySQL 8 数据库的完整 JDBC URL |
+| `DB_USERNAME` | `prod` 必需 | 生产数据库应用用户名称 |
 | `DB_PASSWORD` | 是 | MySQL 应用用户密码 |
 | `ADMIN_USERNAME` | 建议显式设置 | 预置管理员用户名，长度为 3～50 个字符 |
 | `ADMIN_PASSWORD` | 是 | 预置管理员密码，至少 10 个字符 |
@@ -306,6 +316,8 @@ Phase 4.3.3 的后端目标测试结果为：`BackendApplicationTests` 13/13、`
 
 Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败的 P1/P2 问题`。
 
+Phase 4.3.4 第一项最小任务的本地验证结果为：迁移目标测试 3/3、完整后端测试 126/126，Failures、Errors、Skipped 均为 0，Maven `BUILD SUCCESS`。Flyway 在隔离 H2 上成功应用唯一 V1，第二次迁移执行为 0，Hibernate Schema 校验、Entity 字段、主键和三个命名唯一约束均通过。Surefire 中 `jdbc:mysql` 命中数为 0；新增 JDBC URL 为 `jdbc:h2:mem:production_database_migration_test`，未连接或验收真实 MySQL 8。本任务没有重新运行前端测试、构建、远程 CI 或 `/review`，Phase 4.3.4 继续为 `in_progress`。
+
 ## 当前项目状态
 
 | 阶段 | 状态 | 说明 |
@@ -320,12 +332,13 @@ Phase 4.3.1 最终 Review 结论：`未发现会导致 Phase 4.3.1 验收失败�
 | Phase 4.3.1：后端 CORS 允许来源外部化，并收敛为单一精确来源 | `complete` | 配置外部化、非法 Origin 拒绝、规范化与测试环境隔离均已完成并通过复审 |
 | Phase 4.3.2：前端 API 基址外部化与本地开发代理兼容 | `complete` | API 基址外部化、本地 `/api` 开发代理兼容、配置测试与生产构建均已完成；浏览器联调未执行 |
 | Phase 4.3.3：Session 管理端的端到端 CSRF 防护 | `complete` | 实现、本地测试与最终 Review 均已通过 |
+| Phase 4.3.4：生产数据库版本化迁移基线 | `in_progress` | 正在建立全新数据库的 Flyway Schema 与隔离验收；真实 MySQL 8 验收尚未完成 |
 
 当前边界：
 
 - 项目尚未部署上线。
 - 项目尚未声明为生产可用。
 - 管理端 CSRF 防护已启用并通过本地验证与最终 Review，Phase 4.3.3 状态为 `complete`。
-- HTTPS、Secure/SameSite Cookie、反向代理边界、生产数据库与迁移、秘密托管、真实浏览器部署联调和公网部署仍未完成。
+- HTTPS、Secure/SameSite Cookie、反向代理边界、真实 MySQL 8 迁移验收、生产数据库持久化、秘密托管、真实浏览器部署联调和公网部署仍未完成。
 - 当前 CORS 默认面向本地前端 `http://localhost:5173`；如需覆盖，只能通过 `APP_CORS_ALLOWED_ORIGIN` 配置一个精确的 HTTP/HTTPS Origin。
 - README 不包含真实密码、密码哈希、密钥或数据库凭据。
